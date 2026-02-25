@@ -55,7 +55,7 @@ class GitForensicTool:
                 message=commit.message.strip(),
                 author=str(commit.author),
                 timestamp=datetime.fromtimestamp(commit.committed_date),
-                files_changed=[item.path for item in commit.stats.files.keys()]
+                files_changed=list(commit.stats.files.keys())
             )
             commits.append(git_commit)
         

@@ -4,19 +4,27 @@ import base64
 from PIL import Image
 import io
 import asyncio
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage
+except ImportError:  # Allow running without LLM deps when vision isn't used
+    ChatOpenAI = None
+    HumanMessage = None
 
 
 class VisionForensicTool:
     """Multimodal analysis of diagrams."""
     
     def __init__(self, model_name: str = "gpt-4o"):
-        self.llm = ChatOpenAI(model=model_name, max_tokens=1000)
+        self.llm = ChatOpenAI(model=model_name, max_tokens=1000) if ChatOpenAI else None
     
     async def analyze_diagrams(self, images: List[Dict]) -> List[Dict[str, Any]]:
         """Analyze multiple diagrams from PDF."""
         
+        if self.llm is None or HumanMessage is None:
+            raise ImportError("langchain_openai is required for vision analysis")
+
         results = []
         
         for idx, img_data in enumerate(images):

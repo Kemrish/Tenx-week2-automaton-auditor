@@ -1,50 +1,104 @@
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import asyncio
-from docling.document import Document
-from docling.reader import DocumentReader
 import re
+import io
+
+try:
+    from docling.document_converter import DocumentConverter  # New import path
+except ImportError:  # Allow running without docling when PDFs are not used
+    DocumentConverter = None
 
 
 class PDFForensicTool:
-    """PDF analysis using Docling."""
+    """PDF analysis using Docling (updated for v2+)."""
     
     def __init__(self):
-        self.reader = DocumentReader()
+        # Initialize the document converter (new in docling v2)
+        self.converter = DocumentConverter() if DocumentConverter else None
     
     async def analyze_pdf(self, pdf_path: Path) -> Dict[str, Any]:
         """Extract and analyze PDF content."""
         
-        # Read PDF
-        doc = self.reader.read(pdf_path)
-        
-        # Extract text
-        text = doc.text
-        
-        # Extract images (for vision analysis)
-        images = []
-        for page in doc.pages:
-            for element in page.elements:
-                if element.type == 'image':
-                    images.append({
-                        'page': page.number,
-                        'bbox': element.bbox,
-                        'data': element.data
-                    })
-        
-        # Analyze theoretical depth
-        theoretical_depth = await self._analyze_theoretical_depth(text)
-        
-        # Extract claimed file paths
-        claimed_paths = self._extract_file_paths(text)
-        
-        return {
-            'text': text[:2000],  # Truncate for context
-            'images': images,
-            'theoretical_depth': theoretical_depth,
-            'claimed_paths': claimed_paths,
-            'page_count': len(doc.pages)
-        }
+        try:
+            if self.converter is None:
+                return await self._fallback_analysis(pdf_path)
+
+            # Convert PDF to document (new API in v2)
+            result = self.converter.convert(pdf_path)
+            
+            # Get the document
+            doc = result.document
+            
+            # Extract text - different access pattern in v2
+            text = doc.text if hasattr(doc, 'text') else str(doc)
+            
+            # Extract images if available
+            images = []
+            if hasattr(doc, 'pages'):
+                for page_num, page in enumerate(doc.pages):
+                    if hasattr(page, 'elements'):
+                        for element in page.elements:
+                            if hasattr(element, 'type') and element.type == 'image':
+                                images.append({
+                                    'page': page_num + 1,
+                                    'data': element.get_image() if hasattr(element, 'get_image') else None
+                                })
+            
+            # Analyze theoretical depth
+            theoretical_depth = await self._analyze_theoretical_depth(text)
+            
+            # Extract claimed file paths
+            claimed_paths = self._extract_file_paths(text)
+            
+            return {
+                'text': text[:2000],  # Truncate for context
+                'images': images,
+                'theoretical_depth': theoretical_depth,
+                'claimed_paths': claimed_paths,
+                'page_count': len(doc.pages) if hasattr(doc, 'pages') else 0
+            }
+            
+        except Exception as e:
+            # Fallback to simple text extraction if docling fails
+            print(f"Docling conversion failed: {e}, trying fallback...")
+            return await self._fallback_analysis(pdf_path)
+    
+    async def _fallback_analysis(self, pdf_path: Path) -> Dict[str, Any]:
+        """Fallback method if docling fails."""
+        try:
+            # Try to extract text using PyPDF2 or similar
+            # For now, return minimal info
+            import PyPDF2
+            
+            text = ""
+            images = []
+            
+            with open(pdf_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                for page in reader.pages:
+                    text += page.extract_text()
+            
+            theoretical_depth = await self._analyze_theoretical_depth(text)
+            claimed_paths = self._extract_file_paths(text)
+            
+            return {
+                'text': text[:2000],
+                'images': images,
+                'theoretical_depth': theoretical_depth,
+                'claimed_paths': claimed_paths,
+                'page_count': len(reader.pages)
+            }
+            
+        except ImportError:
+            # If PyPDF2 also not available, return empty
+            return {
+                'text': "PDF text extraction failed",
+                'images': [],
+                'theoretical_depth': {},
+                'claimed_paths': [],
+                'page_count': 0
+            }
     
     async def _analyze_theoretical_depth(self, text: str) -> Dict[str, Any]:
         """Analyze depth of theoretical concepts."""
@@ -54,7 +108,7 @@ class PDFForensicTool:
                 'patterns': [
                     r'cognitive\s+debt',
                     r'Margaret\s+Storey',
-                    r'Storey\s+\(\d{4}\)'
+                    r'Storey\s*\(\d{4}\)'
                 ],
                 'found': False,
                 'context': None

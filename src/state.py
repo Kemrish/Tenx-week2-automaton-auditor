@@ -1,4 +1,5 @@
-from typing import TypedDict, Dict, List, Optional, Any, Literal
+from typing import TypedDict, Dict, List, Optional, Any, Literal, Annotated
+import operator
 from pydantic import BaseModel, Field, validator
 from datetime import datetime
 import uuid
@@ -104,6 +105,44 @@ class ForensicEvidenceCollection(BaseModel):
     raw_evidence: Dict[str, Evidence] = Field(default_factory=dict)
 
 
+def merge_evidences(
+    left: Optional[ForensicEvidenceCollection],
+    right: Optional[ForensicEvidenceCollection],
+) -> ForensicEvidenceCollection:
+    """Merge evidence collections for parallel graph updates."""
+    if left is None:
+        return right or ForensicEvidenceCollection()
+    if right is None:
+        return left
+
+    return ForensicEvidenceCollection(
+        git=right.git or left.git,
+        code=right.code or left.code,
+        pdf=right.pdf or left.pdf,
+        images=right.images or left.images,
+        raw_evidence={**left.raw_evidence, **right.raw_evidence},
+    )
+
+
+def merge_criterion_judgments(
+    left: Optional[Dict[str, "CriterionJudgment"]],
+    right: Optional[Dict[str, "CriterionJudgment"]],
+) -> Dict[str, "CriterionJudgment"]:
+    """Merge criterion judgments for parallel judge updates."""
+    if not left:
+        return right or {}
+    if not right:
+        return left
+
+    merged: Dict[str, "CriterionJudgment"] = dict(left)
+    for key, judgment in right.items():
+        if key in merged:
+            merged[key].opinions.extend(judgment.opinions)
+        else:
+            merged[key] = judgment
+    return merged
+
+
 class JudicialOpinion(BaseModel):
     """Opinion from a specific judge persona."""
     
@@ -176,16 +215,17 @@ class AgentState(TypedDict):
     temp_dir: Optional[str]
     
     # Evidence collection
-    evidences: ForensicEvidenceCollection
-    evidence_errors: List[str]
+    evidences: Annotated[ForensicEvidenceCollection, merge_evidences]
+    evidence_errors: Annotated[List[str], operator.add]
     
     # Judicial opinions
-    opinions: List[JudicialOpinion]
-    criterion_judgments: Dict[str, CriterionJudgment]
+    opinions: Annotated[List[JudicialOpinion], operator.add]
+    criterion_judgments: Annotated[Dict[str, CriterionJudgment], merge_criterion_judgments]
     
     # Final output
     final_verdicts: List[FinalVerdict]
     audit_report: Optional[AuditReport]
+    report_path: Optional[str]
     
     # Metadata
     trace_id: str

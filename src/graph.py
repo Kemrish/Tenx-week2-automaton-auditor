@@ -5,14 +5,16 @@ Automaton Auditor - LangGraph Swarm for Autonomous Governance
 
 import asyncio
 import uuid
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, Optional, List
 from datetime import datetime
 from pathlib import Path
 import structlog
+import logging
+import sys
 from dotenv import load_dotenv
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint import MemorySaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START
 
 from src.state import AgentState, ForensicEvidenceCollection
@@ -23,6 +25,13 @@ from src.nodes.justice import ChiefJusticeNode
 # Load environment
 load_dotenv()
 
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+structlog.configure(
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    cache_logger_on_first_use=True,
+)
+
 logger = structlog.get_logger()
 
 
@@ -30,11 +39,11 @@ class AuditorGraph:
     """Main LangGraph definition for Automaton Auditor."""
     
     def __init__(self):
+        self.checkpointer = MemorySaver()
         self.detectives = DetectiveNodes()
         self.judges = JudgeNodes()
         self.justice = ChiefJusticeNode()
         self.graph = self._build_graph()
-        self.checkpointer = MemorySaver()
     
     def _build_graph(self) -> StateGraph:
         """Construct the StateGraph with all nodes and edges."""
@@ -43,6 +52,7 @@ class AuditorGraph:
         builder = StateGraph(AgentState)
         
         # Add nodes
+        builder.add_node("detective_dispatch", self._dispatch_detectives)
         builder.add_node("repo_investigator", self.detectives.repo_investigator)
         builder.add_node("doc_analyst", self.detectives.doc_analyst)
         builder.add_node("vision_inspector", self.detectives.vision_inspector)
@@ -54,9 +64,10 @@ class AuditorGraph:
         builder.add_node("report_generator", self._generate_output)
         
         # Define parallel detective execution
-        builder.add_edge(START, "repo_investigator")
-        builder.add_edge(START, "doc_analyst")
-        builder.add_edge(START, "vision_inspector")
+        builder.add_edge(START, "detective_dispatch")
+        builder.add_edge("detective_dispatch", "repo_investigator")
+        builder.add_edge("detective_dispatch", "doc_analyst")
+        builder.add_edge("detective_dispatch", "vision_inspector")
         
         # Fan-in to aggregator
         builder.add_edge("repo_investigator", "evidence_aggregator")
@@ -69,7 +80,7 @@ class AuditorGraph:
             self._route_based_on_evidence,
             {
                 "proceed_to_judges": "prosecutor",  # Also goes to defense/tech_lead via parallel
-                "retry_detectives": START,
+                "retry_detectives": "detective_dispatch",
                 "abort": END
             }
         )
@@ -106,6 +117,10 @@ class AuditorGraph:
             'evidences': combined,
             'evidence_errors': state.get('evidence_errors', [])
         }
+
+    def _dispatch_detectives(self, state: AgentState) -> dict:
+        """No-op node used to fan-out detective execution."""
+        return {}
     
     def _route_based_on_evidence(self, state: AgentState) -> Literal["proceed_to_judges", "retry_detectives", "abort"]:
         """Route based on evidence collection success."""
@@ -134,7 +149,7 @@ class AuditorGraph:
         report_path = Path(f"audit/report_{timestamp}.md")
         report_path.parent.mkdir(exist_ok=True)
         
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report.executive_summary)
             
             # Add criterion breakdown
@@ -175,6 +190,7 @@ class AuditorGraph:
             'criterion_judgments': {},
             'final_verdicts': [],
             'audit_report': None,
+            'report_path': None,
             'trace_id': str(uuid.uuid4()),
             'errors': [],
             'warnings': []

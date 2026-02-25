@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import structlog
 
 from ..state import (
@@ -38,7 +38,7 @@ class DetectiveNodes:
         
         try:
             # Clone repository in sandbox
-            async with self.sandbox as sandbox:
+            async with self.sandbox() as sandbox:
                 repo_path = await self.git_tool.clone_repository(state['repo_url'])
                 
                 # Run parallel analyses
@@ -107,7 +107,7 @@ class DetectiveNodes:
         logger.info("Starting document analysis", pdf_path=state.get('pdf_path'))
         
         if not state.get('pdf_path'):
-            return {'evidence_errors': ['No PDF path provided']}
+            return {}
         
         try:
             pdf_path = Path(state['pdf_path'])
@@ -167,7 +167,7 @@ class DetectiveNodes:
         logger.info("Starting vision inspection")
         
         if not state.get('evidences') or not state['evidences'].raw_evidence.get('pdf_images'):
-            return {'evidence_errors': ['No images available for analysis']}
+            return {}
         
         try:
             images = state['evidences'].raw_evidence['pdf_images'].content

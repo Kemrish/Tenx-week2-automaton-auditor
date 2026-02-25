@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import os
 import stat
 import subprocess
-from typing import Optional
+from typing import Optional, List
 
 
 class SandboxEnvironment:
