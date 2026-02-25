@@ -1,0 +1,234 @@
+import ast
+import re
+from pathlib import Path
+from typing import List, Optional, Dict, Any, Set
+import tree_sitter
+from tree_sitter_languages import get_language, get_parser
+
+
+class ASTForensicTool:
+    """Advanced AST parsing for code forensic analysis."""
+    
+    def __init__(self):
+        self.supported_languages = {
+            '.py': 'python',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.jsx': 'javascript',
+            '.tsx': 'typescript',
+            '.json': 'json',
+            '.yaml': 'yaml',
+            '.yml': 'yaml',
+            '.md': 'markdown',
+        }
+        
+        # Initialize parsers for each language
+        self.parsers = {}
+        for ext, lang in self.supported_languages.items():
+            if lang != 'markdown' and lang != 'json' and lang != 'yaml':
+                try:
+                    self.parsers[lang] = get_parser(lang)
+                except:
+                    pass
+    
+    async def analyze_codebase(self, repo_path: Path) -> Dict[str, Any]:
+        """Perform comprehensive codebase analysis."""
+        
+        result = {
+            'architecture_notes': await self._find_architecture_notes(repo_path),
+            'tool_registration': await self._analyze_tool_registration(repo_path),
+            'system_prompt': await self._analyze_system_prompt(repo_path),
+            'middleware': await self._analyze_middleware(repo_path),
+            'hashing': await self._analyze_hashing(repo_path),
+            'trace_writing': await self._analyze_trace_writing(repo_path),
+            'state_models': await self._analyze_state_models(repo_path),
+        }
+        
+        return result
+    
+    async def _find_architecture_notes(self, repo_path: Path) -> Dict[str, Any]:
+        """Find and analyze ARCHITECTURE_NOTES.md."""
+        notes_path = repo_path / 'ARCHITECTURE_NOTES.md'
+        
+        if not notes_path.exists():
+            return {'exists': False, 'paths': []}
+        
+        content = notes_path.read_text()
+        
+        # Extract file paths mentioned
+        path_pattern = r'`?([a-zA-Z0-9_/\\-]+\.(ts|js|py|json))`?'
+        paths = re.findall(path_pattern, content)
+        
+        return {
+            'exists': True,
+            'content': content[:500],  # Truncate for context
+            'paths': [p[0] for p in paths]
+        }
+    
+    async def _analyze_tool_registration(self, repo_path: Path) -> Dict[str, Any]:
+        """Verify tool registration in codebase."""
+        
+        # Look for tool definitions
+        tool_patterns = [
+            r'select_active_intent',
+            r'def select_active_intent',
+            r'function select_active_intent',
+            r'const select_active_intent',
+            r'tool\(\s*[\'"`]select_active_intent[\'"`]',
+        ]
+        
+        return await self._search_files(repo_path, tool_patterns, ['src/tools/', 'src/'])
+    
+    async def _analyze_system_prompt(self, repo_path: Path) -> Dict[str, Any]:
+        """Check system prompt for required instructions."""
+        
+        instruction_patterns = [
+            r'You must call select_active_intent',
+            r'call the select_active_intent tool',
+            r'use select_active_intent',
+            r'select_active_intent\(\s*\)',
+        ]
+        
+        return await self._search_files(
+            repo_path, 
+            instruction_patterns, 
+            ['src/core/prompts/', 'src/prompts/']
+        )
+    
+    async def _analyze_middleware(self, repo_path: Path) -> Dict[str, Any]:
+        """Analyze hook/middleware implementation."""
+        
+        hook_patterns = [
+            r'def validate_intent',
+            r'function validateIntent',
+            r'active_intents\.yaml',
+            r'scope_violation',
+            r'if.*scope.*violation',
+        ]
+        
+        return await self._search_files(
+            repo_path,
+            hook_patterns,
+            ['src/hooks/', 'src/middleware/']
+        )
+    
+    async def _analyze_hashing(self, repo_path: Path) -> Dict[str, Any]:
+        """Check for hash implementation."""
+        
+        hash_patterns = [
+            r'hash',
+            r'sha256',
+            r'crypto\.createHash',
+            r'hashlib',
+            r'create_hash',
+        ]
+        
+        return await self._search_files(repo_path, hash_patterns, ['src/'])
+    
+    async def _analyze_trace_writing(self, repo_path: Path) -> Dict[str, Any]:
+        """Check for trace writing to JSONL."""
+        
+        trace_patterns = [
+            r'agent_trace\.jsonl',
+            r'write.*trace',
+            r'append.*jsonl',
+            r'log.*interaction',
+        ]
+        
+        return await self._search_files(repo_path, trace_patterns, ['src/'])
+    
+    async def _analyze_state_models(self, repo_path: Path) -> Dict[str, Any]:
+        """Check for Pydantic state models."""
+        
+        pydantic_patterns = [
+            r'BaseModel',
+            r'Field\(',
+            r'@validator',
+            r'pydantic',
+        ]
+        
+        return await self._search_files(
+            repo_path,
+            pydantic_patterns,
+            ['src/state.py', 'src/graph.py']
+        )
+    
+    async def _search_files(self, repo_path: Path, patterns: List[str], 
+                           search_paths: List[str]) -> Dict[str, Any]:
+        """Search for patterns in files within search paths."""
+        
+        matches = []
+        locations = []
+        
+        for search_path in search_paths:
+            full_path = repo_path / search_path
+            if not full_path.exists():
+                continue
+            
+            if full_path.is_file():
+                files = [full_path]
+            else:
+                files = full_path.rglob('*')
+            
+            for file_path in files:
+                if not file_path.is_file():
+                    continue
+                
+                try:
+                    content = file_path.read_text()
+                    for pattern in patterns:
+                        if re.search(pattern, content, re.IGNORECASE):
+                            matches.append(pattern)
+                            locations.append(str(file_path.relative_to(repo_path)))
+                            break
+                except (UnicodeDecodeError, PermissionError):
+                    continue
+        
+        return {
+            'found': len(matches) > 0,
+            'patterns_found': list(set(matches)),
+            'locations': list(set(locations))
+        }
+    
+    async def parse_ast(self, file_path: Path) -> Optional[ast.AST]:
+        """Parse Python file to AST."""
+        if file_path.suffix != '.py':
+            return None
+        
+        try:
+            content = file_path.read_text()
+            return ast.parse(content)
+        except SyntaxError:
+            return None
+    
+    async def verify_function_export(self, file_path: Path, function_name: str) -> bool:
+        """Verify if function is properly exported."""
+        
+        # Python
+        if file_path.suffix == '.py':
+            tree = await self.parse_ast(file_path)
+            if not tree:
+                return False
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) and node.name == function_name:
+                    return True
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id == function_name:
+                            return True
+        
+        # TypeScript/JavaScript
+        elif file_path.suffix in ['.ts', '.js', '.tsx', '.jsx']:
+            content = file_path.read_text()
+            export_patterns = [
+                rf'export\s+(const|let|var|function)\s+{function_name}',
+                rf'export\s+{{\s*{function_name}\s*}}',
+                rf'module\.exports\s*=\s*{{\s*{function_name}',
+            ]
+            
+            for pattern in export_patterns:
+                if re.search(pattern, content):
+                    return True
+        
+        return False

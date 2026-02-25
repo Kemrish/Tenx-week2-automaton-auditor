@@ -1,0 +1,69 @@
+{
+  "rubric_metadata": {
+    "rubric_name": "Week 2: The Automaton Auditor Self-Evaluation",
+    "grading_target": "Week 2 Auditor Repository & Architectural Report",
+    "version": "1.0.0"
+  },
+  "dimensions": [
+    {
+      "id": "forensic_accuracy_code",
+      "name": "Forensic Accuracy (Codebase)",
+      "target_artifact": "github_repo",
+      "forensic_instruction": "Execute Protocol A.1: Trace the repository for production-grade engineering. Verify Pydantic State models in 'src/graph.py' or 'src/state.py'. Check 'src/tools/' for functionally registered 'git' and 'ast' tools. Check for temporary directory sandboxing during 'git clone'.",
+      "judicial_logic": {
+        "prosecutor": "If tool execution relies on raw 'os.system' without error handling or sandboxing, charge with 'Security Negligence'. If Pydantic is missing, score max 2.",
+        "defense": "Highlight any creative use of Tree-Sitter or complex regex that successfully parses code structures despite environment constraints.",
+        "tech_lead": "Assess the maintainability of the tool-calling logic. Is the tool registry dynamic or hardcoded?"
+      }
+    },
+    {
+      "id": "forensic_accuracy_docs",
+      "name": "Forensic Accuracy (Documentation)",
+      "target_artifact": "pdf_report",
+      "forensic_instruction": "Execute Protocol A.2: Scan PDF for theoretical depth. Verify mentions of 'Cognitive Debt' and 'Trust Debt'. Cross-reference claims made in the PDF (e.g., 'We implemented parallel nodes') with the evidence found by the Code Detective.",
+      "judicial_logic": {
+        "prosecutor": "If the report claims features (like 'Vision analysis') that are not present in the code, charge with 'Auditor Hallucination'. Score 1.",
+        "defense": "Identify sections where the trainee demonstrates deep alignment with Margaret Storey or Martin Fowler's theories.",
+        "tech_lead": "Verify if the architectural notes provide enough detail for a third party to recreate the swarm."
+      }
+    },
+    {
+      "id": "judicial_nuance",
+      "name": "Judicial Nuance & Dialectics",
+      "target_artifact": "github_repo",
+      "forensic_instruction": "Scan 'src/nodes/' or prompt templates. Verify that Prosecutor, Defense, and Tech Lead personas have distinct, conflicting system prompts. Check if the graph actually runs these nodes in parallel.",
+      "judicial_logic": {
+        "prosecutor": "If the three judges share 90% of the same prompt text, charge with 'Persona Collusion'. Score max 2.",
+        "defense": "Look for specific prompt instructions that force the model to be 'contrarian' or 'forgiving'.",
+        "tech_lead": "Evaluate if the Chief Justice uses a structured synthesis algorithm or just averages the scores."
+      }
+    },
+    {
+      "id": "langgraph_architecture",
+      "name": "LangGraph Orchestration Rigor",
+      "target_artifact": "github_repo",
+      "forensic_instruction": "Analyze the StateGraph definition. Verify the use of parallel branches (fan-out) for Judges and Detectives. Check for conditional edges that handle 'Evidence Missing' or 'Node Failure' scenarios.",
+      "judicial_logic": {
+        "prosecutor": "If the graph is purely linear (A->B->C), charge with 'Orchestration Fraud'. Score 1.",
+        "defense": "Support linear designs if they implement robust 'State' transitions and Pydantic validation at every node.",
+        "tech_lead": "Determine if the graph uses Checkpointers for state persistence and recovery."
+      }
+    },
+    {
+      "id": "visual_fidelity",
+      "name": "Visual Swarm Blueprint",
+      "target_artifact": "extracted_images",
+      "forensic_instruction": "Execute Protocol A.3: Analyze diagrams. Verify if the visual flow matches the LangGraph code. Check for 'Reasoning Loop' visualization (Agent -> Hook -> Context).",
+      "judicial_logic": {
+        "prosecutor": "If the diagram is a generic cloud/server icon without flow arrows, score 1.",
+        "defense": "Credit high-fidelity sequence diagrams even if the final code implementation has minor bugs.",
+        "tech_lead": "Does the diagram accurately represent the 'Fan-In' of evidence to the Judicial Bench?"
+      }
+    }
+  ],
+  "synthesis_rules": {
+    "security_override": "Confirmed security flaws (e.g., shell injection in git tools) cap total score at 3.",
+    "fact_supremacy": "Forensic evidence (facts) always overrules Judicial opinion (interpretation).",
+    "dissent_requirement": "The Chief Justice must summarize why the Prosecutor and Defense disagreed in the final report."
+  }
+}
