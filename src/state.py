@@ -70,6 +70,14 @@ class CodeStructureEvidence(BaseModel):
     hashing_location: Optional[str] = None
     trace_writing_implemented: bool
     trace_location: Optional[str] = None
+    state_models_detected: bool = False
+    state_model_locations: List[str] = Field(default_factory=list)
+    graph_fan_out_detected: bool = False
+    graph_fan_in_detected: bool = False
+    conditional_edges_detected: bool = False
+    checkpointer_detected: bool = False
+    graph_edge_count: int = 0
+    graph_node_count: int = 0
 
 
 class PdfForensicEvidence(BaseModel):
@@ -82,6 +90,7 @@ class PdfForensicEvidence(BaseModel):
     claimed_file_paths: List[str] = Field(default_factory=list)
     verified_paths: List[str] = Field(default_factory=list)
     hallucinated_paths: List[str] = Field(default_factory=list)
+    retrieval_snippets: Dict[str, List[str]] = Field(default_factory=dict)
 
 
 class ImageForensicEvidence(BaseModel):
@@ -201,6 +210,7 @@ class AuditReport(BaseModel):
     criterion_breakdown: List[FinalVerdict]
     remediation_plan: Dict[str, List[str]]
     raw_evidence_summary: Dict[str, Any]
+    criterion_narratives: Dict[str, str] = Field(default_factory=dict)
 
 
 class AgentState(TypedDict):

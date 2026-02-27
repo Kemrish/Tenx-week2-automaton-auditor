@@ -1,7 +1,8 @@
 import ast
 import re
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Set
+from typing import List, Optional, Dict, Any, Set, Tuple
 import tree_sitter
 from tree_sitter_languages import get_language, get_parser
 
@@ -42,6 +43,7 @@ class ASTForensicTool:
             'hashing': await self._analyze_hashing(repo_path),
             'trace_writing': await self._analyze_trace_writing(repo_path),
             'state_models': await self._analyze_state_models(repo_path),
+            'graph_structure': await self._analyze_langgraph_structure(repo_path),
         }
         
         return result
@@ -70,6 +72,13 @@ class ASTForensicTool:
         
         # Look for tool definitions
         tool_patterns = [
+            r'@tool',
+            r'StructuredTool',
+            r'Tool\(',
+            r'register_tool',
+            r'add_tool',
+            r'add_tools',
+            r'tools\s*=\s*\[',
             r'select_active_intent',
             r'def select_active_intent',
             r'function select_active_intent',
@@ -87,12 +96,17 @@ class ASTForensicTool:
             r'call the select_active_intent tool',
             r'use select_active_intent',
             r'select_active_intent\(\s*\)',
+            r'role\s*=\s*[\'"`]system[\'"`]',
+            r'\("system"\s*,',
+            r'System\s*Prompt',
+            r'You must',
+            r'Tool',
         ]
         
         return await self._search_files(
             repo_path, 
             instruction_patterns, 
-            ['src/core/prompts/', 'src/prompts/']
+            ['src/core/prompts/', 'src/prompts/', 'src/']
         )
     
     async def _analyze_middleware(self, repo_path: Path) -> Dict[str, Any]:
@@ -152,6 +166,88 @@ class ASTForensicTool:
             pydantic_patterns,
             ['src/state.py', 'src/graph.py']
         )
+
+    async def _analyze_langgraph_structure(self, repo_path: Path) -> Dict[str, Any]:
+        """Infer graph structure: fan-out, fan-in, conditional edges, checkpointers."""
+        edges: List[Tuple[str, str]] = []
+        nodes: Set[str] = set()
+        conditional_edges = False
+        files_scanned: Set[str] = set()
+
+        for file_path in repo_path.rglob("*.py"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, PermissionError):
+                continue
+
+            files_scanned.add(str(file_path.relative_to(repo_path)))
+            try:
+                tree = ast.parse(content)
+            except SyntaxError:
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if isinstance(node.func, ast.Attribute):
+                    func_name = node.func.attr
+                else:
+                    continue
+
+                if func_name == "add_node" and node.args:
+                    first = node.args[0]
+                    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                        nodes.add(first.value)
+
+                if func_name == "add_edge" and len(node.args) >= 2:
+                    src = node.args[0]
+                    dst = node.args[1]
+                    if (
+                        isinstance(src, ast.Constant)
+                        and isinstance(dst, ast.Constant)
+                        and isinstance(src.value, str)
+                        and isinstance(dst.value, str)
+                    ):
+                        edges.append((src.value, dst.value))
+
+                if func_name == "add_conditional_edges":
+                    conditional_edges = True
+                    if node.args:
+                        src = node.args[0]
+                        if isinstance(src, ast.Constant) and isinstance(src.value, str):
+                            nodes.add(src.value)
+
+        in_degree: Dict[str, int] = defaultdict(int)
+        out_degree: Dict[str, int] = defaultdict(int)
+        for src, dst in edges:
+            out_degree[src] += 1
+            in_degree[dst] += 1
+
+        fan_out = any(count > 1 for count in out_degree.values())
+        fan_in = any(count > 1 for count in in_degree.values())
+
+        # Check for checkpointer usage
+        checkpointer_patterns = [
+            r'checkpointer\s*=',
+            r'compile\(\s*checkpointer=',
+            r'MemorySaver\(',
+            r'SqliteSaver\(',
+            r'PostgresSaver\(',
+            r'InMemorySaver\(',
+        ]
+        checkpointer = await self._search_files(repo_path, checkpointer_patterns, ['src/'])
+
+        return {
+            'fan_out': fan_out,
+            'fan_in': fan_in,
+            'conditional_edges': conditional_edges,
+            'checkpointer_used': checkpointer['found'],
+            'edge_count': len(edges),
+            'node_count': len(nodes),
+            'files_scanned': list(files_scanned),
+        }
     
     async def _search_files(self, repo_path: Path, patterns: List[str], 
                            search_paths: List[str]) -> Dict[str, Any]:
@@ -175,7 +271,7 @@ class ASTForensicTool:
                     continue
                 
                 try:
-                    content = file_path.read_text()
+                    content = file_path.read_text(encoding="utf-8")
                     for pattern in patterns:
                         if re.search(pattern, content, re.IGNORECASE):
                             matches.append(pattern)

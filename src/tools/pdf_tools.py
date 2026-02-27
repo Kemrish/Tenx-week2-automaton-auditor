@@ -3,6 +3,8 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import re
 import io
+from collections import defaultdict
+from textwrap import shorten
 
 try:
     from docling.document_converter import DocumentConverter  # New import path
@@ -32,7 +34,7 @@ class PDFForensicTool:
             
             # Extract text - different access pattern in v2
             text = doc.text if hasattr(doc, 'text') else str(doc)
-            
+
             # Extract images if available
             images = []
             if hasattr(doc, 'pages'):
@@ -50,13 +52,16 @@ class PDFForensicTool:
             
             # Extract claimed file paths
             claimed_paths = self._extract_file_paths(text)
+
+            retrieval = self._retrieve_key_concepts(text)
             
             return {
                 'text': text[:2000],  # Truncate for context
                 'images': images,
                 'theoretical_depth': theoretical_depth,
                 'claimed_paths': claimed_paths,
-                'page_count': len(doc.pages) if hasattr(doc, 'pages') else 0
+                'page_count': len(doc.pages) if hasattr(doc, 'pages') else 0,
+                'retrieval': retrieval
             }
             
         except Exception as e:
@@ -81,13 +86,15 @@ class PDFForensicTool:
             
             theoretical_depth = await self._analyze_theoretical_depth(text)
             claimed_paths = self._extract_file_paths(text)
+            retrieval = self._retrieve_key_concepts(text)
             
             return {
                 'text': text[:2000],
                 'images': images,
                 'theoretical_depth': theoretical_depth,
                 'claimed_paths': claimed_paths,
-                'page_count': len(reader.pages)
+                'page_count': len(reader.pages),
+                'retrieval': retrieval
             }
             
         except ImportError:
@@ -97,7 +104,8 @@ class PDFForensicTool:
                 'images': [],
                 'theoretical_depth': {},
                 'claimed_paths': [],
-                'page_count': 0
+                'page_count': 0,
+                'retrieval': {}
             }
     
     async def _analyze_theoretical_depth(self, text: str) -> Dict[str, Any]:
@@ -170,3 +178,27 @@ class PDFForensicTool:
                     paths.append(path)
         
         return paths
+
+    def _retrieve_key_concepts(self, text: str) -> Dict[str, List[str]]:
+        """Lightweight retrieval of key concepts with contextual snippets."""
+        queries = {
+            "cognitive_debt": [r'cognitive\s+debt', r'Margaret\s+Storey'],
+            "trust_debt": [r'trust\s+debt', r'trust\s+building'],
+            "context_injection_paradox": [r'context[-\s]injection\s+paradox', r'context\s+injection'],
+            "two_stage_state_machine": [r'two[-\s]stage\s+state\s+machine', r'finite\s+state'],
+            "langgraph": [r'langgraph', r'state\s+graph'],
+        }
+
+        snippets: Dict[str, List[str]] = {}
+        for key, patterns in queries.items():
+            matches = []
+            for pattern in patterns:
+                for match in re.finditer(pattern, text, re.IGNORECASE):
+                    start = max(0, match.start() - 120)
+                    end = min(len(text), match.end() + 120)
+                    snippet = text[start:end].replace("\n", " ")
+                    matches.append(shorten(snippet, width=240, placeholder="..."))
+            if matches:
+                snippets[key] = matches[:3]
+
+        return snippets

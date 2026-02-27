@@ -237,10 +237,22 @@ Return ONLY valid JSON that matches the schema below.
             summary_parts.append(f"Middleware: {evidences.code.middleware_exists}")
             summary_parts.append(f"Hashing: {evidences.code.hashing_implemented}")
             summary_parts.append(f"Trace Writing: {evidences.code.trace_writing_implemented}")
+            summary_parts.append(f"State Models: {evidences.code.state_models_detected}")
+            summary_parts.append(
+                f"Graph Structure: fan_out={evidences.code.graph_fan_out_detected}, "
+                f"fan_in={evidences.code.graph_fan_in_detected}, "
+                f"conditional={evidences.code.conditional_edges_detected}, "
+                f"checkpointer={evidences.code.checkpointer_detected}, "
+                f"nodes={evidences.code.graph_node_count}, edges={evidences.code.graph_edge_count}"
+            )
         
         if evidences.pdf:
             summary_parts.append(f"PDF Mentions: {len(evidences.pdf.claimed_file_paths)} paths")
             summary_parts.append(f"Hallucinated: {len(evidences.pdf.hallucinated_paths)}")
+            if evidences.pdf.retrieval_snippets:
+                summary_parts.append(
+                    "PDF Retrieval: " + ", ".join(sorted(evidences.pdf.retrieval_snippets.keys()))
+                )
         
         if evidences.images:
             summary_parts.append(f"Diagrams: {evidences.images.image_count}")

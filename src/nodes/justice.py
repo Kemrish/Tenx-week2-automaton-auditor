@@ -117,16 +117,22 @@ class ChiefJusticeNode:
         parts = []
         
         if 'Prosecutor' in opinions:
-            parts.append(f"Prosecution: Score {opinions['Prosecutor'].score} - "
-                        f"{opinions['Prosecutor'].argument[:100]}")
+            parts.append(
+                f"Prosecution: Score {opinions['Prosecutor'].score} - "
+                f"{opinions['Prosecutor'].argument[:160]}"
+            )
         
         if 'Defense' in opinions:
-            parts.append(f"Defense: Score {opinions['Defense'].score} - "
-                        f"{opinions['Defense'].argument[:100]}")
+            parts.append(
+                f"Defense: Score {opinions['Defense'].score} - "
+                f"{opinions['Defense'].argument[:160]}"
+            )
         
         if 'TechLead' in opinions:
-            parts.append(f"Tech Lead: Score {opinions['TechLead'].score} - "
-                        f"{opinions['TechLead'].argument[:100]}")
+            parts.append(
+                f"Tech Lead: Score {opinions['TechLead'].score} - "
+                f"{opinions['TechLead'].argument[:160]}"
+            )
         
         parts.append(f"Final Ruling: Score {final_score}")
         
@@ -196,7 +202,7 @@ class ChiefJusticeNode:
 
 **Overall Score:** {total_score}/{max_score} ({percentage:.1f}%)
 
-This audit evaluated the submission against {len(verdicts)} criteria using a dialectical judicial process with Prosecutor, Defense, and Tech Lead personas.
+This audit evaluated the submission against {len(verdicts)} criteria using a dialectical judicial process with Prosecutor, Defense, and Tech Lead personas. The findings below summarize evidence quality, architectural rigor, and documentation fidelity with targeted remediation steps.
 
 ### Key Findings:
 """
@@ -204,11 +210,11 @@ This audit evaluated the submission against {len(verdicts)} criteria using a dia
         # Add key findings
         for verdict in verdicts:
             if verdict.final_score >= 4:
-                executive_summary += f"- ✅ {verdict.criterion_id}: Strong implementation\n"
+                executive_summary += f"- [OK] {verdict.criterion_id}: Strong implementation\n"
             elif verdict.final_score <= 2:
-                executive_summary += f"- ❌ {verdict.criterion_id}: Critical issues\n"
+                executive_summary += f"- [FAIL] {verdict.criterion_id}: Critical issues\n"
             else:
-                executive_summary += f"- ⚠️ {verdict.criterion_id}: Needs improvement\n"
+                executive_summary += f"- [WARN] {verdict.criterion_id}: Needs improvement\n"
         
         # Remediation plan by category
         remediation_plan = {}
@@ -222,11 +228,35 @@ This audit evaluated the submission against {len(verdicts)} criteria using a dia
             'pdf_analyzed': state['evidences'].pdf is not None,
             'diagrams_analyzed': state['evidences'].images.image_count if state['evidences'].images else 0
         }
+
+        # Narrative per criterion
+        criterion_narratives: Dict[str, str] = {}
+        for verdict in verdicts:
+            judgment = state.get('criterion_judgments', {}).get(verdict.criterion_id)
+            if not judgment:
+                continue
+            opinions = {o.judge: o for o in judgment.opinions}
+            prosecutor = opinions.get('Prosecutor')
+            defense = opinions.get('Defense')
+            tech_lead = opinions.get('TechLead')
+            narrative_parts = [
+                f"Final Score {verdict.final_score}/5 with variance {judgment.score_variance:.1f}.",
+            ]
+            if prosecutor:
+                narrative_parts.append(f"Prosecution emphasized: {prosecutor.argument[:220]}")
+            if defense:
+                narrative_parts.append(f"Defense emphasized: {defense.argument[:220]}")
+            if tech_lead:
+                narrative_parts.append(f"Tech Lead emphasized: {tech_lead.argument[:220]}")
+            criterion_narratives[verdict.criterion_id] = " ".join(narrative_parts)
         
         return AuditReport(
             repo_url=state['repo_url'],
             executive_summary=executive_summary,
             criterion_breakdown=verdicts,
             remediation_plan=remediation_plan,
-            raw_evidence_summary=evidence_summary
+            raw_evidence_summary=evidence_summary,
+            criterion_narratives=criterion_narratives
         )
+
+

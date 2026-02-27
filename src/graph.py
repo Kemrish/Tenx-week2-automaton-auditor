@@ -157,6 +157,9 @@ class AuditorGraph:
             for verdict in report.criterion_breakdown:
                 f.write(f"### {verdict.criterion_id}\n")
                 f.write(f"**Score:** {verdict.final_score}/5\n\n")
+                if report.criterion_narratives.get(verdict.criterion_id):
+                    f.write("**Narrative:**\n")
+                    f.write(report.criterion_narratives[verdict.criterion_id] + "\n\n")
                 f.write(f"**Dissent:** {verdict.dissent_summary}\n\n")
                 f.write("**Remediation:**\n")
                 for step in verdict.remediation_plan:

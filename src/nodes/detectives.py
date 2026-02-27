@@ -71,7 +71,15 @@ class DetectiveNodes:
                 hashing_implemented=code_analysis['hashing']['found'],
                 hashing_location=code_analysis['hashing']['locations'][0] if code_analysis['hashing']['locations'] else None,
                 trace_writing_implemented=code_analysis['trace_writing']['found'],
-                trace_location=code_analysis['trace_writing']['locations'][0] if code_analysis['trace_writing']['locations'] else None
+                trace_location=code_analysis['trace_writing']['locations'][0] if code_analysis['trace_writing']['locations'] else None,
+                state_models_detected=code_analysis['state_models']['found'],
+                state_model_locations=code_analysis['state_models']['locations'],
+                graph_fan_out_detected=code_analysis['graph_structure']['fan_out'],
+                graph_fan_in_detected=code_analysis['graph_structure']['fan_in'],
+                conditional_edges_detected=code_analysis['graph_structure']['conditional_edges'],
+                checkpointer_detected=code_analysis['graph_structure']['checkpointer_used'],
+                graph_edge_count=code_analysis['graph_structure']['edge_count'],
+                graph_node_count=code_analysis['graph_structure']['node_count'],
             )
             
             # Update state
@@ -84,6 +92,18 @@ class DetectiveNodes:
                         content=str([c.message for c in git_analysis.commits]),
                         location='git_log',
                         confidence=1.0
+                    ),
+                    'graph_structure': Evidence(
+                        found=True,
+                        content=str(code_analysis.get('graph_structure', {})),
+                        location='static_analysis',
+                        confidence=0.9
+                    ),
+                    'state_models': Evidence(
+                        found=code_analysis['state_models']['found'],
+                        content=str(code_analysis['state_models']),
+                        location='static_analysis',
+                        confidence=0.9 if code_analysis['state_models']['found'] else 0.6
                     )
                 }
             )
@@ -137,7 +157,8 @@ class DetectiveNodes:
                 two_stage_state_machine_mentioned=pdf_analysis['theoretical_depth']['two_stage_state_machine']['found'],
                 claimed_file_paths=claimed_paths,
                 verified_paths=verified_paths,
-                hallucinated_paths=hallucinated_paths
+                hallucinated_paths=hallucinated_paths,
+                retrieval_snippets=pdf_analysis.get('retrieval', {})
             )
             
             # Store images for vision analysis
@@ -152,7 +173,19 @@ class DetectiveNodes:
                             content=pdf_analysis['text'],
                             location='pdf',
                             confidence=0.9
-                        )
+                        ),
+                        'pdf_retrieval': Evidence(
+                            found=True,
+                            content=str(pdf_analysis.get('retrieval', {})),
+                            location='pdf_retrieval',
+                            confidence=0.8
+                        ),
+                        'pdf_images': Evidence(
+                            found=bool(images),
+                            content=images,
+                            location='pdf_images',
+                            confidence=0.8 if images else 0.4
+                        ),
                     }
                 )
             }
