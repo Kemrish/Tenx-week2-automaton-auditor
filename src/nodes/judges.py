@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+import os
 import asyncio
 import json
 from langchain_openai import ChatOpenAI
@@ -21,16 +22,28 @@ class JudgeNodes:
     """Judicial nodes with distinct personas."""
     
     def __init__(self, model_name: str = "gpt-4-turbo-preview"):
-        self.llm = ChatOpenAI(model=model_name, temperature=0.2)
+        api_key = (
+            os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("DEEPSEEK_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL")
+        self.llm = ChatOpenAI(
+            model=model_name,
+            temperature=0.2,
+            api_key=api_key,
+            base_url=base_url,
+        )
         self.rubric = RubricLoader.load_rubric()
         
+        # Output parser
+        self.parser = PydanticOutputParser(pydantic_object=JudicialOpinion)
+        self.format_instructions = self.parser.get_format_instructions()
+
         # Persona prompts
         self.prosecutor_prompt = self._create_prosecutor_prompt()
         self.defense_prompt = self._create_defense_prompt()
         self.tech_lead_prompt = self._create_tech_lead_prompt()
-        
-        # Output parser
-        self.parser = PydanticOutputParser(pydantic_object=JudicialOpinion)
     
     def _create_prosecutor_prompt(self) -> ChatPromptTemplate:
         """Create strict, critical prosecutor persona."""
@@ -58,11 +71,8 @@ Evidence: {evidence}
 
 For criterion: {criterion_id}
 
-Return a structured opinion with:
-- score (0-5 integer)
-- argument (detailed prosecution case)
-- cited_evidence (list of specific evidence items)
-- confidence (0.0-1.0)
+Return ONLY valid JSON that matches the schema below.
+{format_instructions}
 """),
             ("human", "Render your verdict for {criterion_name} based on the forensic evidence.")
         ])
@@ -93,11 +103,8 @@ Evidence: {evidence}
 
 For criterion: {criterion_id}
 
-Return a structured opinion with:
-- score (0-5 integer)
-- argument (detailed defense case)
-- cited_evidence (list of specific evidence items)
-- confidence (0.0-1.0)
+Return ONLY valid JSON that matches the schema below.
+{format_instructions}
 """),
             ("human", "Defend this submission for {criterion_name}.")
         ])
@@ -132,11 +139,8 @@ Evidence: {evidence}
 
 For criterion: {criterion_id}
 
-Return a structured opinion with:
-- score (0-5 integer)
-- argument (detailed tech lead assessment)
-- cited_evidence (list of specific evidence items)
-- confidence (0.0-1.0)
+Return ONLY valid JSON that matches the schema below.
+{format_instructions}
 """),
             ("human", "Assess {criterion_name} for production readiness.")
         ])
@@ -173,7 +177,8 @@ Return a structured opinion with:
                     'rubric': json.dumps(self.rubric, indent=2),
                     'evidence': evidence_summary,
                     'criterion_id': criterion['id'],
-                    'criterion_name': criterion['name']
+                    'criterion_name': criterion['name'],
+                    'format_instructions': self.format_instructions
                 })
                 
                 # Ensure correct persona

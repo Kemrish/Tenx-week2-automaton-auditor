@@ -4,6 +4,7 @@ import base64
 from PIL import Image
 import io
 import asyncio
+import os
 
 try:
     from langchain_openai import ChatOpenAI
@@ -17,7 +18,21 @@ class VisionForensicTool:
     """Multimodal analysis of diagrams."""
     
     def __init__(self, model_name: str = "gpt-4o"):
-        self.llm = ChatOpenAI(model=model_name, max_tokens=1000) if ChatOpenAI else None
+        if ChatOpenAI:
+            api_key = (
+                os.getenv("OPENROUTER_API_KEY")
+                or os.getenv("DEEPSEEK_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+            )
+            base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL")
+            self.llm = ChatOpenAI(
+                model=model_name,
+                max_tokens=1000,
+                api_key=api_key,
+                base_url=base_url,
+            )
+        else:
+            self.llm = None
     
     async def analyze_diagrams(self, images: List[Dict]) -> List[Dict[str, Any]]:
         """Analyze multiple diagrams from PDF."""
