@@ -236,6 +236,7 @@ class AgentState(TypedDict):
     final_verdicts: List[FinalVerdict]
     audit_report: Optional[AuditReport]
     report_path: Optional[str]
+    report_artifacts: Dict[str, str]
     
     # Metadata
     trace_id: str

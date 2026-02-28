@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Optional
 import asyncio
+import json
 from datetime import datetime
+from pathlib import Path
 import structlog
 
 from ..state import (
@@ -34,10 +36,12 @@ class ChiefJusticeNode:
         
         # Generate complete report
         audit_report = await self._generate_report(state, final_verdicts)
+        report_artifacts = self._persist_reports(audit_report)
         
         return {
             'final_verdicts': final_verdicts,
-            'audit_report': audit_report
+            'audit_report': audit_report,
+            'report_artifacts': report_artifacts
         }
     
     async def _deliberate_criterion(self, judgment: CriterionJudgment, 
@@ -242,6 +246,10 @@ This audit evaluated the submission against {len(verdicts)} criteria using a dia
             narrative_parts = [
                 f"Final Score {verdict.final_score}/5 with variance {judgment.score_variance:.1f}.",
             ]
+            if verdict.security_override_applied:
+                narrative_parts.append("Security override applied.")
+            if verdict.fact_supremacy_applied:
+                narrative_parts.append("Fact supremacy applied.")
             if prosecutor:
                 narrative_parts.append(f"Prosecution emphasized: {prosecutor.argument[:220]}")
             if defense:
@@ -258,5 +266,78 @@ This audit evaluated the submission against {len(verdicts)} criteria using a dia
             raw_evidence_summary=evidence_summary,
             criterion_narratives=criterion_narratives
         )
+
+    def _persist_reports(self, report: AuditReport) -> Dict[str, str]:
+        """Persist all report artifacts from the synthesis node."""
+        timestamp = report.timestamp.strftime("%Y%m%d_%H%M%S")
+        report_dir = Path("audit")
+        report_dir.mkdir(exist_ok=True)
+
+        full_report_path = report_dir / f"report_{timestamp}_full.md"
+        summary_report_path = report_dir / f"report_{timestamp}_summary.md"
+        json_report_path = report_dir / f"report_{timestamp}.json"
+
+        full_report = self._render_full_report(report)
+        summary_report = self._render_summary_report(report)
+
+        full_report_path.write_text(full_report, encoding="utf-8")
+        summary_report_path.write_text(summary_report, encoding="utf-8")
+        json_report_path.write_text(
+            json.dumps(report.model_dump(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        logger.info("Report artifacts saved", full=str(full_report_path), summary=str(summary_report_path))
+
+        return {
+            "full_report": str(full_report_path),
+            "summary_report": str(summary_report_path),
+            "json_report": str(json_report_path),
+        }
+
+    def _render_summary_report(self, report: AuditReport) -> str:
+        """Render a summary-only report."""
+        return report.executive_summary.strip()
+
+    def _render_full_report(self, report: AuditReport) -> str:
+        """Render the full narrative report."""
+        lines: List[str] = []
+        lines.append(report.executive_summary.strip())
+        lines.append("")
+        lines.append("## Evidence Summary")
+        lines.append("")
+        lines.append(f"- Git commits analyzed: {report.raw_evidence_summary.get('git_commits', 0)}")
+        lines.append(f"- Code analyzed: {report.raw_evidence_summary.get('code_analyzed', False)}")
+        lines.append(f"- PDF analyzed: {report.raw_evidence_summary.get('pdf_analyzed', False)}")
+        lines.append(f"- Diagrams analyzed: {report.raw_evidence_summary.get('diagrams_analyzed', 0)}")
+        lines.append("")
+        lines.append("## Criterion Breakdown")
+        lines.append("")
+
+        for verdict in report.criterion_breakdown:
+            lines.append(f"### {verdict.criterion_id}")
+            lines.append(f"**Score:** {verdict.final_score}/5")
+            lines.append("")
+            narrative = report.criterion_narratives.get(verdict.criterion_id)
+            if narrative:
+                lines.append("**Narrative:**")
+                lines.append(narrative)
+                lines.append("")
+            lines.append(f"**Dissent:** {verdict.dissent_summary}")
+            lines.append("")
+            lines.append("**Remediation:**")
+            for step in verdict.remediation_plan:
+                lines.append(f"- {step}")
+            lines.append("")
+
+        lines.append("## Complete Remediation Plan")
+        lines.append("")
+        for criterion, steps in report.remediation_plan.items():
+            lines.append(f"### {criterion}")
+            for step in steps:
+                lines.append(f"- {step}")
+            lines.append("")
+
+        return "\n".join(lines)
 
 

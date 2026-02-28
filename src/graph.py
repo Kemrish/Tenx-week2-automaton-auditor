@@ -140,6 +140,12 @@ class AuditorGraph:
     async def _generate_output(self, state: AgentState) -> dict:
         """Generate final output files."""
         
+        if state.get('report_artifacts'):
+            return {
+                'report_path': state['report_artifacts'].get('full_report'),
+                'report_artifacts': state['report_artifacts']
+            }
+
         report = state.get('audit_report')
         if not report:
             return {}
@@ -151,6 +157,11 @@ class AuditorGraph:
         
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report.executive_summary)
+            f.write("\n\n## Evidence Summary\n\n")
+            f.write(f"- Git commits analyzed: {report.raw_evidence_summary.get('git_commits', 0)}\n")
+            f.write(f"- Code analyzed: {report.raw_evidence_summary.get('code_analyzed', False)}\n")
+            f.write(f"- PDF analyzed: {report.raw_evidence_summary.get('pdf_analyzed', False)}\n")
+            f.write(f"- Diagrams analyzed: {report.raw_evidence_summary.get('diagrams_analyzed', 0)}\n")
             
             # Add criterion breakdown
             f.write("\n\n## Criterion Breakdown\n\n")
@@ -194,6 +205,7 @@ class AuditorGraph:
             'final_verdicts': [],
             'audit_report': None,
             'report_path': None,
+            'report_artifacts': {},
             'trace_id': str(uuid.uuid4()),
             'errors': [],
             'warnings': []
@@ -254,7 +266,10 @@ async def main():
     
     elif args.repo:
         result = await auditor.run(args.repo, args.pdf)
-        print(f"Audit complete. Report: {result.get('report_path')}")
+        report_path = result.get('report_path')
+        if not report_path and result.get('report_artifacts'):
+            report_path = result['report_artifacts'].get('full_report')
+        print(f"Audit complete. Report: {report_path}")
     
     else:
         parser.print_help()

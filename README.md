@@ -47,7 +47,10 @@ python -m src.graph --repo https://github.com/your-org/your-repo.git --pdf path/
 python -m src.graph --batch https://github.com/org/repo1.git https://github.com/org/repo2.git
 ```
 
-Reports are saved to `audit/` as timestamped Markdown files.
+Reports are saved to `audit/` as three artifacts:
+- Full narrative report (`report_YYYYMMDD_HHMMSS_full.md`)
+- Executive summary (`report_YYYYMMDD_HHMMSS_summary.md`)
+- Machine-readable JSON (`report_YYYYMMDD_HHMMSS.json`)
 
 ## Project Structure
 
@@ -56,9 +59,9 @@ Reports are saved to `audit/` as timestamped Markdown files.
 - `src/tools/`: Git, AST, PDF, and vision forensic tooling
 - `rubric/`: Evaluation rubric
 - `audit/`: Generated reports
+- `ARCHITECTURE_NOTES.md`: System architecture and flow diagram
 
 ## Notes
 
 - Dependency lock file: `uv.lock` (commit for reproducible installs).
 - Use `.env.example` as the canonical list of required environment variables.
-
