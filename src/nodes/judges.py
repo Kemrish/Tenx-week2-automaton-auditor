@@ -162,6 +162,7 @@ Return ONLY valid JSON that matches the schema below.
         """Judge all criteria for a specific persona."""
         
         opinions = []
+        judge_errors = []
         
         # Get evidence summary
         evidence_summary = self._summarize_evidence(state['evidences'])
@@ -190,6 +191,7 @@ Return ONLY valid JSON that matches the schema below.
             except Exception as e:
                 logger.error(f"Judgment failed for {criterion['id']}", 
                            persona=persona, error=str(e))
+                judge_errors.append(f"{persona}:{criterion['id']}:{str(e)}")
                 
                 # Create fallback opinion
                 opinions.append(JudicialOpinion(
@@ -218,7 +220,8 @@ Return ONLY valid JSON that matches the schema below.
         
         return {
             'opinions': opinions,
-            'criterion_judgments': criterion_judgments
+            'criterion_judgments': criterion_judgments,
+            'judge_errors': judge_errors
         }
     
     def _summarize_evidence(self, evidences: ForensicEvidenceCollection) -> str:

@@ -57,9 +57,12 @@ class AuditorGraph:
         builder.add_node("doc_analyst", self.detectives.doc_analyst)
         builder.add_node("vision_inspector", self.detectives.vision_inspector)
         builder.add_node("evidence_aggregator", self._aggregate_evidence)
+        builder.add_node("evidence_gate", self._evidence_gate)
+        builder.add_node("judge_dispatch", self._dispatch_judges)
         builder.add_node("prosecutor", self.judges.prosecutor)
         builder.add_node("defense", self.judges.defense)
         builder.add_node("tech_lead", self.judges.tech_lead)
+        builder.add_node("judge_aggregator", self._aggregate_judgments)
         builder.add_node("chief_justice", self.justice.synthesize)
         builder.add_node("report_generator", self._generate_output)
         
@@ -73,27 +76,38 @@ class AuditorGraph:
         builder.add_edge("repo_investigator", "evidence_aggregator")
         builder.add_edge("doc_analyst", "evidence_aggregator")
         builder.add_edge("vision_inspector", "evidence_aggregator")
+        builder.add_edge("evidence_aggregator", "evidence_gate")
         
         # Conditional routing based on evidence
         builder.add_conditional_edges(
-            "evidence_aggregator",
+            "evidence_gate",
             self._route_based_on_evidence,
             {
-                "proceed_to_judges": "prosecutor",  # Also goes to defense/tech_lead via parallel
+                "proceed_to_judges": "judge_dispatch",
                 "retry_detectives": "detective_dispatch",
                 "abort": END
             }
         )
         
         # Parallel judicial execution
-        builder.add_edge("evidence_aggregator", "prosecutor")
-        builder.add_edge("evidence_aggregator", "defense")
-        builder.add_edge("evidence_aggregator", "tech_lead")
+        builder.add_edge("judge_dispatch", "prosecutor")
+        builder.add_edge("judge_dispatch", "defense")
+        builder.add_edge("judge_dispatch", "tech_lead")
         
-        # Fan-in to chief justice
-        builder.add_edge("prosecutor", "chief_justice")
-        builder.add_edge("defense", "chief_justice")
-        builder.add_edge("tech_lead", "chief_justice")
+        # Fan-in to judge aggregator
+        builder.add_edge("prosecutor", "judge_aggregator")
+        builder.add_edge("defense", "judge_aggregator")
+        builder.add_edge("tech_lead", "judge_aggregator")
+
+        # Conditional routing based on judge output
+        builder.add_conditional_edges(
+            "judge_aggregator",
+            self._route_based_on_judges,
+            {
+                "proceed_to_justice": "chief_justice",
+                "retry_judges": "judge_dispatch",
+            }
+        )
         
         # Generate report
         builder.add_edge("chief_justice", "report_generator")
@@ -118,24 +132,68 @@ class AuditorGraph:
             'evidence_errors': state.get('evidence_errors', [])
         }
 
+    def _evidence_gate(self, state: AgentState) -> dict:
+        """Explicit gate to ensure all detectives have reported."""
+        statuses = state.get('detective_status', {})
+        updates = {}
+        failed = [name for name, status in statuses.items() if status == 'failed']
+        if failed:
+            updates['evidence_errors'] = [f"Detective failed: {', '.join(sorted(failed))}"]
+            updates['detective_attempts'] = state.get('detective_attempts', 0) + 1
+        elif state.get('evidence_errors'):
+            updates['detective_attempts'] = state.get('detective_attempts', 0) + 1
+        return updates
+
     def _dispatch_detectives(self, state: AgentState) -> dict:
         """No-op node used to fan-out detective execution."""
-        return {}
+        return {'evidence_errors': []}
+
+    def _dispatch_judges(self, state: AgentState) -> dict:
+        """No-op node used to fan-out judge execution."""
+        return {'judge_errors': []}
     
     def _route_based_on_evidence(self, state: AgentState) -> Literal["proceed_to_judges", "retry_detectives", "abort"]:
         """Route based on evidence collection success."""
         
         errors = state.get('evidence_errors', [])
+        attempts = state.get('detective_attempts', 0)
         
+        if not state.get('repo_cloned', True):
+            logger.error("Repository clone failed, aborting")
+            return "abort"
+
         if len(errors) > 3:
             logger.error("Too many evidence errors", count=len(errors))
             return "abort"
+
+        evidences = state.get('evidences')
+        if evidences and (evidences.git is None or evidences.code is None):
+            logger.warning("Missing core evidence, retrying detectives")
+            return "retry_detectives"
         
         if errors:
             logger.warning("Evidence errors present, retrying", errors=errors)
             return "retry_detectives"
         
         return "proceed_to_judges"
+
+    def _aggregate_judgments(self, state: AgentState) -> dict:
+        """Aggregate judge errors for routing."""
+        updates = {'judge_errors': state.get('judge_errors', [])}
+        if updates['judge_errors']:
+            updates['judge_attempts'] = state.get('judge_attempts', 0) + 1
+            updates['warnings'] = [f"Judge output errors: {len(updates['judge_errors'])}"]
+        return updates
+
+    def _route_based_on_judges(self, state: AgentState) -> Literal["proceed_to_justice", "retry_judges"]:
+        """Route based on judge output validity."""
+        errors = state.get('judge_errors', [])
+        attempts = state.get('judge_attempts', 0)
+        if errors and attempts < 1:
+            return "retry_judges"
+        if errors:
+            return "proceed_to_justice"
+        return "proceed_to_justice"
     
     async def _generate_output(self, state: AgentState) -> dict:
         """Generate final output files."""
@@ -200,8 +258,16 @@ class AuditorGraph:
             'temp_dir': None,
             'evidences': ForensicEvidenceCollection(),
             'evidence_errors': [],
+            'detective_status': {
+                'repo_investigator': 'pending',
+                'doc_analyst': 'pending',
+                'vision_inspector': 'pending',
+            },
+            'detective_attempts': 0,
             'opinions': [],
             'criterion_judgments': {},
+            'judge_errors': [],
+            'judge_attempts': 0,
             'final_verdicts': [],
             'audit_report': None,
             'report_path': None,

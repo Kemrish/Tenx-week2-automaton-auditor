@@ -53,7 +53,8 @@ class PDFForensicTool:
             # Extract claimed file paths
             claimed_paths = self._extract_file_paths(text)
 
-            retrieval = self._retrieve_key_concepts(text)
+            chunks = self._chunk_text(text)
+            retrieval = self._retrieve_key_concepts(chunks)
             
             return {
                 'text': text[:2000],  # Truncate for context
@@ -61,7 +62,8 @@ class PDFForensicTool:
                 'theoretical_depth': theoretical_depth,
                 'claimed_paths': claimed_paths,
                 'page_count': len(doc.pages) if hasattr(doc, 'pages') else 0,
-                'retrieval': retrieval
+                'retrieval': retrieval,
+                'chunks': chunks,
             }
             
         except Exception as e:
@@ -75,6 +77,10 @@ class PDFForensicTool:
             # Try to extract text using PyPDF2 or similar
             # For now, return minimal info
             import PyPDF2
+            try:
+                import fitz  # PyMuPDF
+            except Exception:
+                fitz = None
             
             text = ""
             images = []
@@ -83,10 +89,27 @@ class PDFForensicTool:
                 reader = PyPDF2.PdfReader(file)
                 for page in reader.pages:
                     text += page.extract_text()
+
+            # Extract images via PyMuPDF if available
+            images = []
+            if fitz:
+                doc = fitz.open(str(pdf_path))
+                for page_index in range(len(doc)):
+                    page = doc[page_index]
+                    for img_index, img in enumerate(page.get_images(full=True)):
+                        xref = img[0]
+                        base = doc.extract_image(xref)
+                        image_bytes = base.get("image")
+                        if image_bytes:
+                            images.append({
+                                "page": page_index + 1,
+                                "data": image_bytes,
+                            })
             
             theoretical_depth = await self._analyze_theoretical_depth(text)
             claimed_paths = self._extract_file_paths(text)
-            retrieval = self._retrieve_key_concepts(text)
+            chunks = self._chunk_text(text)
+            retrieval = self._retrieve_key_concepts(chunks)
             
             return {
                 'text': text[:2000],
@@ -94,7 +117,8 @@ class PDFForensicTool:
                 'theoretical_depth': theoretical_depth,
                 'claimed_paths': claimed_paths,
                 'page_count': len(reader.pages),
-                'retrieval': retrieval
+                'retrieval': retrieval,
+                'chunks': chunks,
             }
             
         except ImportError:
@@ -105,7 +129,8 @@ class PDFForensicTool:
                 'theoretical_depth': {},
                 'claimed_paths': [],
                 'page_count': 0,
-                'retrieval': {}
+                'retrieval': {},
+                'chunks': []
             }
     
     async def _analyze_theoretical_depth(self, text: str) -> Dict[str, Any]:
@@ -179,7 +204,7 @@ class PDFForensicTool:
         
         return paths
 
-    def _retrieve_key_concepts(self, text: str) -> Dict[str, List[str]]:
+    def _retrieve_key_concepts(self, chunks: List[Dict[str, str]]) -> Dict[str, List[str]]:
         """Lightweight retrieval of key concepts with contextual snippets."""
         queries = {
             "cognitive_debt": [r'cognitive\s+debt', r'Margaret\s+Storey'],
@@ -193,12 +218,33 @@ class PDFForensicTool:
         for key, patterns in queries.items():
             matches = []
             for pattern in patterns:
-                for match in re.finditer(pattern, text, re.IGNORECASE):
-                    start = max(0, match.start() - 120)
-                    end = min(len(text), match.end() + 120)
-                    snippet = text[start:end].replace("\n", " ")
-                    matches.append(shorten(snippet, width=240, placeholder="..."))
+                for chunk in chunks:
+                    for match in re.finditer(pattern, chunk["text"], re.IGNORECASE):
+                        start = max(0, match.start() - 120)
+                        end = min(len(chunk["text"]), match.end() + 120)
+                        snippet = chunk["text"][start:end].replace("\n", " ")
+                        matches.append(
+                            f"{chunk['id']}: {shorten(snippet, width=220, placeholder='...')}"
+                        )
             if matches:
                 snippets[key] = matches[:3]
 
         return snippets
+
+    def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 120) -> List[Dict[str, str]]:
+        """Chunk text into overlapping segments for targeted retrieval."""
+        if not text:
+            return []
+        chunks: List[Dict[str, str]] = []
+        start = 0
+        idx = 1
+        while start < len(text):
+            end = min(len(text), start + chunk_size)
+            chunk_text = text[start:end].strip()
+            if chunk_text:
+                chunks.append({"id": f"chunk_{idx}", "text": chunk_text})
+                idx += 1
+            if end == len(text):
+                break
+            start = max(0, end - overlap)
+        return chunks

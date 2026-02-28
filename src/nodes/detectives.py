@@ -91,18 +91,21 @@ class DetectiveNodes:
                         found=True,
                         content=str([c.message for c in git_analysis.commits]),
                         location='git_log',
+                        rationale="Commit messages used to infer history quality and progression.",
                         confidence=1.0
                     ),
                     'graph_structure': Evidence(
                         found=True,
                         content=str(code_analysis.get('graph_structure', {})),
                         location='static_analysis',
+                        rationale="Static analysis of StateGraph construction to confirm fan-out/fan-in/conditional edges.",
                         confidence=0.9
                     ),
                     'state_models': Evidence(
                         found=code_analysis['state_models']['found'],
                         content=str(code_analysis['state_models']),
                         location='static_analysis',
+                        rationale="Pydantic model presence indicates typed state and validation.",
                         confidence=0.9 if code_analysis['state_models']['found'] else 0.6
                     )
                 }
@@ -111,14 +114,16 @@ class DetectiveNodes:
             return {
                 'evidences': new_evidences,
                 'repo_cloned': True,
-                'temp_dir': str(repo_path) if repo_path else None
+                'temp_dir': str(repo_path) if repo_path else None,
+                'detective_status': {'repo_investigator': 'done'}
             }
             
         except Exception as e:
             logger.error("Repo investigation failed", error=str(e))
             return {
                 'evidence_errors': [f"Repo investigation failed: {str(e)}"],
-                'repo_cloned': False
+                'repo_cloned': False,
+                'detective_status': {'repo_investigator': 'failed'}
             }
     
     async def doc_analyst(self, state: AgentState) -> Dict[str, Any]:
@@ -127,7 +132,7 @@ class DetectiveNodes:
         logger.info("Starting document analysis", pdf_path=state.get('pdf_path'))
         
         if not state.get('pdf_path'):
-            return {}
+            return {'detective_status': {'doc_analyst': 'skipped'}}
         
         try:
             pdf_path = Path(state['pdf_path'])
@@ -172,27 +177,41 @@ class DetectiveNodes:
                             found=True,
                             content=pdf_analysis['text'],
                             location='pdf',
+                            rationale="Extracted text used for concept matching and cross-reference against code evidence.",
                             confidence=0.9
                         ),
                         'pdf_retrieval': Evidence(
                             found=True,
                             content=str(pdf_analysis.get('retrieval', {})),
                             location='pdf_retrieval',
+                            rationale="Concept snippets retrieved from chunked PDF text for targeted verification and cross-reference.",
                             confidence=0.8
                         ),
                         'pdf_images': Evidence(
                             found=bool(images),
                             content=images,
                             location='pdf_images',
+                            rationale="Images extracted for multimodal diagram inspection.",
                             confidence=0.8 if images else 0.4
                         ),
+                        'pdf_chunks': Evidence(
+                            found=bool(pdf_analysis.get('chunks')),
+                            content=str(pdf_analysis.get('chunks', []))[:2000],
+                            location='pdf_chunks',
+                            rationale="Chunked PDF text used for targeted retrieval queries.",
+                            confidence=0.7 if pdf_analysis.get('chunks') else 0.4
+                        ),
                     }
-                )
+                ),
+                'detective_status': {'doc_analyst': 'done'}
             }
             
         except Exception as e:
             logger.error("Document analysis failed", error=str(e))
-            return {'evidence_errors': [f"Document analysis failed: {str(e)}"]}
+            return {
+                'evidence_errors': [f"Document analysis failed: {str(e)}"],
+                'detective_status': {'doc_analyst': 'failed'}
+            }
     
     async def vision_inspector(self, state: AgentState) -> Dict[str, Any]:
         """Vision detective node - analyzes diagrams."""
@@ -200,7 +219,7 @@ class DetectiveNodes:
         logger.info("Starting vision inspection")
         
         if not state.get('evidences') or not state['evidences'].raw_evidence.get('pdf_images'):
-            return {}
+            return {'detective_status': {'vision_inspector': 'skipped'}}
         
         try:
             images = state['evidences'].raw_evidence['pdf_images'].content
@@ -226,10 +245,23 @@ class DetectiveNodes:
             
             return {
                 'evidences': ForensicEvidenceCollection(
-                    images=image_evidence
-                )
+                    images=image_evidence,
+                    raw_evidence={
+                        'diagram_analysis': Evidence(
+                            found=True,
+                            content=str(diagram_analyses),
+                            location='vision',
+                            rationale="Multimodal analysis of extracted diagrams for flow and labeling fidelity.",
+                            confidence=0.8
+                        )
+                    }
+                ),
+                'detective_status': {'vision_inspector': 'done'}
             }
             
         except Exception as e:
             logger.error("Vision inspection failed", error=str(e))
-            return {'evidence_errors': [f"Vision inspection failed: {str(e)}"]}
+            return {
+                'evidence_errors': [f"Vision inspection failed: {str(e)}"],
+                'detective_status': {'vision_inspector': 'failed'}
+            }

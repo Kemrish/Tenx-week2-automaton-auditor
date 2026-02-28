@@ -11,6 +11,7 @@ class Evidence(BaseModel):
     found: bool
     content: Optional[str] = None
     location: str
+    rationale: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -152,6 +153,31 @@ def merge_criterion_judgments(
     return merged
 
 
+def merge_str_dict(
+    left: Optional[Dict[str, str]],
+    right: Optional[Dict[str, str]],
+) -> Dict[str, str]:
+    """Merge string dictionaries for parallel graph updates."""
+    if not left:
+        return right or {}
+    if not right:
+        return left
+    merged = dict(left)
+    merged.update(right)
+    return merged
+
+
+def merge_list_with_reset(left: Optional[List[str]], right: Optional[List[str]]) -> List[str]:
+    """Merge lists but allow explicit reset when right is empty."""
+    if right == []:
+        return []
+    if not left:
+        return right or []
+    if not right:
+        return left
+    return left + right
+
+
 class JudicialOpinion(BaseModel):
     """Opinion from a specific judge persona."""
     
@@ -226,11 +252,15 @@ class AgentState(TypedDict):
     
     # Evidence collection
     evidences: Annotated[ForensicEvidenceCollection, merge_evidences]
-    evidence_errors: Annotated[List[str], operator.add]
+    evidence_errors: Annotated[List[str], merge_list_with_reset]
+    detective_status: Annotated[Dict[str, str], merge_str_dict]
+    detective_attempts: int
     
     # Judicial opinions
     opinions: Annotated[List[JudicialOpinion], operator.add]
     criterion_judgments: Annotated[Dict[str, CriterionJudgment], merge_criterion_judgments]
+    judge_errors: Annotated[List[str], merge_list_with_reset]
+    judge_attempts: int
     
     # Final output
     final_verdicts: List[FinalVerdict]
@@ -241,4 +271,4 @@ class AgentState(TypedDict):
     # Metadata
     trace_id: str
     errors: List[str]
-    warnings: List[str]
+    warnings: Annotated[List[str], operator.add]

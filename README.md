@@ -47,8 +47,10 @@ python -m src.graph --repo https://github.com/your-org/your-repo.git --pdf path/
 python -m src.graph --batch https://github.com/org/repo1.git https://github.com/org/repo2.git
 ```
 
-Reports are saved to `audit/` as three artifacts:
-- Full narrative report (`report_YYYYMMDD_HHMMSS_full.md`)
+Reports are saved to `audit/` with explicit report provenance:
+- Self-audit (`report_YYYYMMDD_HHMMSS_self_audit.md`)
+- Peer-audit (`report_YYYYMMDD_HHMMSS_peer_audit.md`)
+- Peer-received (`report_YYYYMMDD_HHMMSS_peer_received.md`)
 - Executive summary (`report_YYYYMMDD_HHMMSS_summary.md`)
 - Machine-readable JSON (`report_YYYYMMDD_HHMMSS.json`)
 
